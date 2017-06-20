@@ -1,0 +1,50 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Tue Jun 13 11:07:11 2017
+
+@author: jhartmann
+"""
+### Minor entitity matching with in one table
+### Update Organization and svnID information for the
+### Apache committers when available
+
+import sys
+import pymysql
+    
+pw = ''
+dbuser = ''
+db = ''
+dbhost = ''
+
+dbconn = pymysql.connect(host= dbhost,
+                         user= dbuser,
+                         passwd= pw,
+                         db= db,
+                         use_unicode=True,
+                         charset="utf8mb4")
+cursor = dbconn.cursor()
+
+selectCommitters = 'SELECT svn_id, organization_name\
+                    FROM apache_committers_copy \
+                    WHERE organization_name <> ""'                    
+
+updateCommitters = 'UPDATE apache_committers_copy SET \
+                    organization_name = %s \
+                    WHERE svn_id = %s AND organization_name != %s'
+                                               
+                                                
+cursor.execute(selectCommitters)
+committerList = cursor.fetchall()
+
+for committer in committerList:
+    svn_id = committer[0] 
+    organization_name = committer[1]
+    if svn_id != '':
+       
+        print(svn_id, "      ", organization_name)
+        cursor.execute(updateCommitters, (organization_name, svn_id, organization_name))
+        dbconn.commit()
+        print('update')
+
+dbconn.close
