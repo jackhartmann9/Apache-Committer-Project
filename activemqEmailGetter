@@ -1,0 +1,186 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Tue Jun 13 14:21:04 2017
+
+@author: jhartmann
+"""
+
+
+import sys
+import pymysql
+import datetime
+from bs4 import BeautifulSoup
+try:
+    import urllib.request as urllib2
+except ImportError:
+    import urllib2
+
+       
+pw = ''
+dbuser = ''
+db = ''
+dbhost = ''
+
+dbconn = pymysql.connect(host= dbhost,
+                         user= dbuser,
+                         passwd= pw,
+                         db= db,
+                         use_unicode=True,
+                         charset="utf8mb4")
+cursor = dbconn.cursor()
+
+insertEmails = 'INSERT INTO apache_dev_emails (datasource_id, \
+                                                   project_name, \
+                                                   email_url, \
+                                                   email_url_RAW_text, \
+                                                   email_date, \
+                                                   email_subject_line, \
+                                                   email_content, \
+                                                   is_github_email, \
+                                                   last_updated)\
+                                                   VALUES  (%s, %s, %s, %s, %s, %s, %s, %s, %s)'    
+
+mainMailUrl = 'https://marc.info/?l=activemq-dev&r=1&w=2'
+
+hdr = {'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.11 (KHTML, like Gecko) Chrome/23.0.1271.64 Safari/537.11',
+       'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+       'Accept-Charset': 'ISO-8859-1,utf-8;q=0.7,*;q=0.3',
+       'Accept-Encoding': 'none',
+       'Accept-Language': 'en-US,en;q=0.8',
+       'Connection': 'keep-alive'}
+       
+ 
+### Due to email and structural diversity. multiple loops and try statements were needed to reach 
+### different parts of the marc.info email archives
+       
+messageListCheck = []
+data_source_id = 80000
+project_name = 'activemq'
+try:
+    req = urllib2.Request(mainMailUrl,headers=hdr)
+    mainMail = urllib2.urlopen(req).read()
+    
+    soup = BeautifulSoup(mainMail, 'html.parser')
+    dateList = soup.find_all('dd')
+    #print(dateList)
+
+     
+    j = 0
+    while True:
+        dateLinks = dateList[j].find_all('a')
+        i = 0
+        while True:
+            dateUrl = 'https://marc.info/' + dateLinks[i].get('href')
+            p = 1
+            k = 9
+            urlNumber = 9
+            while True:
+                urlPieces = dateUrl.split('r=1&')
+                updatingUrl = urlPieces[0] + 'r=' + str(p) + '&' + urlPieces[1]
+                req2 = urllib2.Request(updatingUrl,headers=hdr)
+                messageList = urllib2.urlopen(req2).read()
+                soup = BeautifulSoup(messageList, 'html.parser')
+                links = soup.find_all('a')
+                
+                try:
+                    while True:
+                        messageLink = links[k].get('href')
+                        
+                        # Get emails that are in threads
+                        if 'w=2&n=' in messageLink and messageLink.split('&r=')[0] not in messageListCheck :
+                            messagePageNum = 1
+                            mailPage = 1
+                            messageListCheck.extend([messageLink.split('&r=')[0]])
+                            while True:
+                                pageBase1 = messageLink.split('r=')[0] #+ 'r=' + r + '&w=2'
+                                pageBase = 'https://marc.info/' + pageBase1 + 'r=' + str(mailPage) +'&w=2'
+                                req4 = urllib2.Request(pageBase,headers=hdr)
+                                allMessagesList = urllib2.urlopen(req4).read()
+                                soupLists = BeautifulSoup(allMessagesList, 'html.parser')
+                                mainSectionOfMessages = soupLists.find('pre')
+                                indLinks = mainSectionOfMessages.find_all('a')
+                                t = 0
+                                while True: 
+                                    try:
+                                        messageUrl = indLinks[t].get('href')
+                                    except:
+                                        break
+                                    if 'm=' in messageUrl:
+                                        emailSubject = indLinks[t].contents[0]
+                                        mesDate = indLinks[t].previousSibling
+                                        mesDate = mesDate.split('. ')[1]
+                                        messageNumber = t
+                                        urlNumber = k
+                                        messagePageNum = mailPage
+                                        cutMessageUrl = messageUrl.split('&w')[0]
+                                        
+                                        rawMessageUrl = 'https://marc.info/' + cutMessageUrl + '&q=raw'
+                                        trueMessageUrl = 'https://marc.info/' + cutMessageUrl + '&w=2'
+                                        print(mesDate,'-----', rawMessageUrl, '=====', emailSubject)
+                                        req3 = urllib2.Request(rawMessageUrl,headers=hdr)
+                                        messageContent = urllib2.urlopen(req3).read()
+                                        if '[GitHub]' in emailSubject:
+                                            is_github = True
+                                        else:
+                                            is_github = False
+                                        lastUpdate = datetime.datetime.now()
+                                        try:
+                                            cursor.execute(insertEmails,(data_source_id, project_name, trueMessageUrl, rawMessageUrl, mesDate, emailSubject, messageContent, is_github, lastUpdate))
+                                            dbconn.commit()
+                                            
+                                        except pymysql.Error as error:
+                                            print(error)
+                                            dbconn.rollback() 
+                                    t = t+ 1
+                                    if t > (messageNumber + 3):
+                                        break
+                                    t = t + 1
+                                mailPage = mailPage + 1
+                                if mailPage > messagePageNum + 1:
+                                    break
+                            k = k + 2
+                        messageLink = links[k].get('href')
+                        
+                        
+                        # Get emails that are not part of a thread
+                        if 'm=' in messageLink:
+                            emailSubject = links[k].contents[0]
+                            urlNumber = k
+                            messageDate = links[k].previousSibling.previousSibling.previousSibling
+                            messageDate = messageDate.split('. ')[1]
+                            messageDate = messageDate.split(' ')[0]
+                            rawMessageUrl = 'https://marc.info/' + messageLink + '&q=raw'
+                            trueMessageUrl = 'https://marc.info/' + messageLink + '&w=2'
+                            print(messageDate,'-----', rawMessageUrl, '=====', emailSubject)
+                            req3 = urllib2.Request(rawMessageUrl,headers=hdr)
+                            messageContent = urllib2.urlopen(req3).read()
+                            if '[GitHub]' in emailSubject:
+                                is_github = True
+                            else:
+                                is_github = False
+                            lastUpdate = datetime.datetime.now()
+                            try:     
+                                cursor.execute(insertEmails, (data_source_id, project_name, trueMessageUrl, rawMessageUrl, mesDate, emailSubject, messageContent, is_github, lastUpdate))
+                                dbconn.commit()
+    
+                            except pymysql.Error as error:
+                                print(error)
+                                dbconn.rollback()     
+                                
+                        k = k + 1
+                    if k > urlNumber + 3:
+                        break
+                except:
+                    pass  
+                if k > urlNumber + 3:
+                    p = p + 1
+                    break
+            i = i + 1
+        j = j + 1
+        if 'activemq-dev' not in dateList[j]:
+            break
+except:
+    pass
+
+dbconn.close
