@@ -1,0 +1,112 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Wed Jun 21 09:57:51 2017
+
+@author: jhartmann
+"""
+
+
+import re
+import sys
+import pymysql
+import datetime
+from bs4 import BeautifulSoup
+ 
+pw = ''
+dbuser = ''
+db = ''
+dbhost = ''
+
+dbconn = pymysql.connect(host= dbhost,
+                         user= dbuser,
+                         passwd= pw,
+                         db= db,
+                         use_unicode=True,
+                         charset="utf8mb4")
+cursor = dbconn.cursor()
+
+selectUsers = 'SELECT from_username, from_email \
+                FROM activemq_dev_emails_parsed_cleaned \
+                WHERE email_list = "activemq-dev"'
+                
+                
+selectScreenNames = 'SELECT svn_id \
+                FROM apache_committers_copy \
+                WHERE real_name = %s'
+                
+selectOrganization = 'SELECT organization_name \
+                        FROM apache_committers_copy \
+                        WHERE svn_id = %s AND project_name = "activemq" \
+                        AND organization_name <> ""'
+                        
+selectRealName = 'SELECT real_name \
+                    FROM apache_committers_copy \
+                    WHERE svn_id = %s AND project_name = "activemq"'
+                
+                
+updatedUsername = 'UPDATE activemq_dev_emails_parsed_cleaned SET \
+                    from_username_cleaned = %s, \
+                    from_realname_cleaned = %s, \
+                    user_organization = %s, \
+                    last_updated = %s \
+                    WHERE from_username = %s AND from_email = %s'
+                    
+cursor.execute(selectUsers)
+usernameList = cursor.fetchall()
+#print(usernameList)
+j = 0
+for user in usernameList:
+    updateUsername = ''
+    emailOrg = ''
+    fromNameReal = ''
+    fromName = usernameList[j][0]
+    prevName = fromName
+    emailAddress = usernameList[j][1]
+    if '"' in fromName:
+        fromName =  fromName.replace('"', '')
+    if '(JIRA)' in fromName:
+        fromName = fromName.replace('(JIRA)', '')
+        
+        
+    try:
+        fromName1 = re.findall('[A-Z][^A-Z]*', fromName)
+        if fromName1 != []:
+            fromNameReal = ' '.join(fromName1)
+            #print(fromNameReal)
+        try:
+            cursor.execute(selectScreenNames, (fromNameReal))
+            updateUsername = cursor.fetchone()[0]
+            #print(updateUsername)
+           
+        except:
+            updateUsername = fromName
+            pass
+    except:
+        updateUsername = fromName
+    
+    if fromNameReal == '':
+        try:    
+            cursor.execute(selectRealName, (updateUsername))
+            fromNameReal = cursor.fetchone()[0]
+        except:
+            fromNameReal = ''
+    try:
+        cursor.execute(selectOrganization, (updateUsername))
+        emailOrg = cursor.fetchone()[0]
+    except:
+        emailOrg = ''
+    time = datetime.datetime.now()
+    j = j + 1
+    print(updateUsername, fromNameReal, emailOrg)
+    
+
+    try:     
+        cursor.execute(updatedUsername, (updateUsername, fromNameReal, emailOrg, time, prevName, emailAddress))
+        dbconn.commit()
+    
+    except pymysql.Error as error:
+        print(error)
+        dbconn.rollback()   
+        
+dbconn.close()
