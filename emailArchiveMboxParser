@@ -1,0 +1,122 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Fri Jun 23 09:14:00 2017
+
+@author: jhartmann
+"""
+import sys
+import pymysql
+import datetime
+import mailbox
+import email.utils
+from bs4 import BeautifulSoup
+import urllib.request
+try:
+    import urllib.request as urllib2
+except ImportError:
+    import urllib2
+#emails = open(201706.mbox)
+pw = 'E'
+dbuser = ''
+db = ''
+dbhost = ''
+
+dbconn = pymysql.connect(host= dbhost,
+                         user= dbuser,
+                         passwd= pw,
+                         db= db,
+                         use_unicode=True,
+                         charset="utf8mb4")
+cursor = dbconn.cursor()
+insertEmails = 'INSERT INTO hadoop_dev_emails (datasource_id, \
+                                                   mbox_url, \
+                                                   email_list, \
+                                                   subject, \
+                                                   from_name,\
+                                                   from_email, \
+                                                   email_date, \
+                                                   message_id, \
+                                                   body_text,\
+                                                   last_updated)\
+                                                   VALUES  (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)'    
+                                                   
+
+emailList = 'hadoop-mapreduce-dev'
+datasourceID = 8000
+def emailMboxParse(mboxFile):
+    i = 0
+    for message in mailbox.mbox(mboxFile):
+        From = str(message['From'])
+        fname,femail = email.utils.parseaddr(From)
+        if 'JIRA' in fname:
+            fname = fname.replace(' (JIRA)', '')
+        subject = str(message['Subject'])
+        date = str(message['Date'])
+        try:
+            date = date.split(' -')[0]
+            date = date.split(' +')[0].split(', ')[1]
+            date = datetime.datetime.strptime(date, '%d %b %Y %H:%M:%S').strftime('%y-%m-%d %H:%M:%S')
+        except:
+            date = '0000-00-00'
+        print(date, subject, fname)
+        
+        
+        messageID = str(message['Message-ID'])
+        try:
+            if message.is_multipart():
+                content = ''.join(part.get_payload(decode=True) for part in message.get_payload())
+            else:
+                content = message.get_payload(decode=True)
+        except:
+            content = message.get_payload(decode=True)
+           
+        time = datetime.datetime.now()    
+        try:
+            cursor.execute(insertEmails,(datasourceID, downloadAdditions, emailList, subject, fname, femail, date, messageID, content, time))
+            dbconn.commit()
+    
+        except pymysql.Error as error:
+            print(error)
+            dbconn.rollback()  
+        
+        print ("**************************************" )
+        i+=1
+        
+archiveHome = 'http://mail-archives.apache.org/mod_mbox/hadoop-mapreduce-dev/'
+
+
+hdr = {'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.11 (KHTML, like Gecko) Chrome/23.0.1271.64 Safari/537.11',
+       'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+       'Accept-Charset': 'ISO-8859-1,utf-8;q=0.7,*;q=0.3',
+       'Accept-Encoding': 'none',
+       'Accept-Language': 'en-US,en;q=0.8',
+       'Connection': 'keep-alive'}
+       
+
+req = urllib2.Request(archiveHome,headers=hdr)
+fullArchive = urllib2.urlopen(req).read()
+  
+soup = BeautifulSoup(fullArchive, 'html.parser')
+table = soup.find_all('tbody')
+for t in table:
+    tablerows = t.find_all('tr')
+    for row in tablerows:
+        cells = row.find_all('td')
+        linkCell = cells[1]
+        for link in linkCell.find_all('a'):
+            dateUrl = link.get('href')
+            if '/thread' in dateUrl:
+                url1 = dateUrl.split('/')[0]
+                downloadAdditions = 'http://mail-archives.apache.org/mod_mbox/hadoop-mapreduce-dev/' + url1
+                #print(downloadAdditions)
+                req2 = urllib2.Request(downloadAdditions,headers=hdr)
+                mailText = urllib2.urlopen(req).read()
+                urllib.request.urlretrieve(downloadAdditions, 'current.mbox')
+                emailMboxParse('current.mbox')
+
+dbconn.close()            
+                
+                
+
+    
