@@ -1,0 +1,166 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Tue Jun 27 09:51:37 2017
+
+@author: jhartmann
+"""
+
+import sys
+import pymysql
+import datetime
+import mailbox
+import email.utils
+from bs4 import BeautifulSoup
+import urllib.request
+try:
+    import urllib.request as urllib2
+except ImportError:
+    import urllib2
+#emails = open(201706.mbox)
+pw = 'Earwig53'
+dbuser = 'jhartmann'
+db = 'test'
+dbhost = 'flossdata.syr.edu'
+
+dbconn = pymysql.connect(host= dbhost,
+                         user= dbuser,
+                         passwd= pw,
+                         db= db,
+                         use_unicode=True,
+                         charset="utf8mb4")
+cursor = dbconn.cursor()
+insertEmails = 'INSERT INTO Apache_emails (datasource_id, \
+                                                   mbox_url, \
+                                                   email_list, \
+                                                   subject, \
+                                                   from_name,\
+                                                   from_email, \
+                                                   email_date, \
+                                                   message_id, \
+                                                   body_text,\
+                                                   last_updated)\
+                                                   VALUES  (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)'    
+                                                   
+                     
+hdr = {'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.11 (KHTML, like Gecko) Chrome/23.0.1271.64 Safari/537.11',
+       'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+       'Accept-Charset': 'ISO-8859-1,utf-8;q=0.7,*;q=0.3',
+       'Accept-Encoding': 'none',
+       'Accept-Language': 'en-US,en;q=0.8',
+       'Connection': 'keep-alive'}
+                     
+
+### Get List of Email Archives
+### Returns a list of archive names
+## This Works For Now
+def getProjectList():
+    archiveHome = 'http://mail-archives.apache.org/mod_mbox/'       
+    req = urllib2.Request(archiveHome,headers=hdr)
+    archiveListPage = urllib2.urlopen(req).read()
+
+
+    mainSoup = BeautifulSoup(archiveListPage, 'html.parser')
+    allUrl = mainSoup.find_all('a')
+    tableList = []
+    for url in allUrl:
+        isolatedName = ''
+        url = str(url.get('href'))
+        if url != 'None':
+            isolatedName = url.split('/')[0]
+            tableList.append(isolatedName)
+        return tableList
+  
+
+#def createTable:
+
+
+          
+### takes the name of the email List (Ex: aries-dev)
+### Gets monthly email archives in an Mbox Form
+### Mbox file stored locally as "currentArchive.mbox"
+## This Works For Now
+def getMonthlyMboxArchive(emailListTitleAllMonths):
+    emailListCompleteDate = 'http://mail-archives.apache.org/mod_mbox/' + emailListTitleAllMonths + '/'
+    print(emailListCompleteDate)
+    req = urllib2.Request(emailListCompleteDate,headers=hdr)
+    fullArchive = urllib2.urlopen(req).read()  
+    soup = BeautifulSoup(fullArchive, 'html.parser')
+    table = soup.find_all('tbody')
+    for t in table:
+        tablerows = t.find_all('tr')
+        for row in tablerows:
+            cells = row.find_all('td')
+            linkCell = cells[1]
+            for link in linkCell.find_all('a'):
+                dateUrl = link.get('href')
+                if '/thread' in dateUrl:
+                    dateId = dateUrl.split('/')[0]
+                    archiveAddress = emailListCompleteDate + dateId
+                    print(archiveAddress)
+                
+                #MIGHT BE ABLE TO DELETE THIS FIRST urllib2
+
+                    urllib.request.urlretrieve(archiveAddress, 'currentArchive.mbox')
+                    emailMboxParse('currentArchive.mbox')
+                
+### This function deals with nasty multipart messages
+### It turns the messages, that look crappy, into plain text as intended to view
+### I could have left them as normal "payload" but if we ant this later we can us the message that is stores as a whole 
+### in teh database
+## This Works For Now                 
+def convertMessageToText(message):
+    if message.is_multipart():   #Walk through the parts of the email to find the text body.
+            for part in message.walk():
+                if part.is_multipart(): # If part is multipart, walk through the subparts.
+                    for subpart in part.walk():
+                        if subpart.get_content_type() == 'text/plain':
+                        for k,v in subpart.items():
+                                if k == 'Content-Transfer-Encoding':
+                                    cte = v             # Keep the Content Transfer Encoding
+                elif subpart.get_content_type() == 'text/plain':
+                    content = part.get_payload()           # part isn't multipart Get the payload
+                    for k,v in part.items():
+                        if k == 'Content-Transfer-Encoding':
+                            cte = v       
+    else:
+            content = message.get_payload(decode=True).decode()
+    return content
+
+    
+    
+    
+def emailMboxParse(message):
+    for message in mailbox.mbox(mboxFile):
+        completeMessage = message
+        fromLine = str(message['From'])
+        fname,femail = email.utils.parseaddr(fromLine)
+        subject = str(message['Subject'])
+        date = str(message['Date'])
+        print(date, fname)
+        messageID = str(message['Message-ID'])
+        toLine = str(message['To'])
+        tname, temail = email.utils.parseaddr(toLine)
+        content = convertMessageToText(message)
+
+           
+        time = datetime.datetime.now()    
+#        try:
+#            cursor.execute(insertEmails,(datasourceID, archiveAddress, emailList, subject, fname, femail, date, messageID, content, time))
+#            dbconn.commit()
+#    
+#        except pymysql.Error as error:
+#            print(error)
+#            dbconn.rollback()  
+        
+        print ("**************************************" )
+
+ 
+for project in getProjectList():
+    getMonthlyMboxArchive(project)
+
+dbconn.close()            
+                
+                
+
+    
