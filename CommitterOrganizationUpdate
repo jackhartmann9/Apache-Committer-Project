@@ -5,7 +5,7 @@ Created on Tue Jun 13 11:07:11 2017
 
 @author: jhartmann
 """
-### Minor entitity matching with in one table
+### Minor entitity matcheing within one table
 ### Update Organization and svnID information for the
 ### Apache committers when available
 
@@ -13,9 +13,9 @@ import sys
 import pymysql
     
 pw = ''
-dbuser = ''
-db = ''
-dbhost = ''
+dbuser = 'jhartmann'
+db = 'test'
+dbhost = 'flossdata.syr.edu'
 
 dbconn = pymysql.connect(host= dbhost,
                          user= dbuser,
@@ -25,13 +25,13 @@ dbconn = pymysql.connect(host= dbhost,
                          charset="utf8mb4")
 cursor = dbconn.cursor()
 
-selectCommitters = 'SELECT svn_id, organization_name\
-                    FROM apache_committers_copy \
+selectCommitters = 'SELECT svn_id, organization_name, project_name\
+                    FROM apache_committers_updated \
                     WHERE organization_name <> ""'                    
 
-updateCommitters = 'UPDATE apache_committers_copy SET \
+updateCommitters = 'UPDATE apache_committers_updated SET \
                     organization_name = %s \
-                    WHERE svn_id = %s AND organization_name != %s'
+                    WHERE svn_id = %s AND organization_name <> %s'
                                                
                                                 
 cursor.execute(selectCommitters)
@@ -39,10 +39,11 @@ committerList = cursor.fetchall()
 
 for committer in committerList:
     svn_id = committer[0] 
+    organization_name = ''
     organization_name = committer[1]
     if svn_id != '':
        
-        print(svn_id, "      ", organization_name)
+        print(svn_id, "      ", organization_name, '       ', committer[2])
         cursor.execute(updateCommitters, (organization_name, svn_id, organization_name))
         dbconn.commit()
         print('update')
