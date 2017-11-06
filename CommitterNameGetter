@@ -1,0 +1,96 @@
+# -*- coding: utf-8 -*-
+import sys
+import pymysql
+import datetime
+from bs4 import BeautifulSoup
+
+try:
+    import urllib.request as urllib2
+except ImportError:
+    import urllib2
+    
+pw = ''
+dbuser = ''
+db = 'apache'
+dbhost = 'flossdata.syr.edu'
+
+
+dbconn = pymysql.connect(host= dbhost,
+                         user= dbuser,
+                         passwd= pw,
+                         db= db,
+                         use_unicode=True,
+                         charset="utf8mb4")
+cursor = dbconn.cursor()
+insertCommitters = 'INSERT INTO apache_committers (screen_name, \
+                                                real_name, \
+                                                datasource_id, \
+                                                last_updated) \
+                                                VALUES  (%s, %s, %s,%s)'
+                    
+
+
+data_id = 72474
+committer_url = 'http://people.apache.org/committer-index.html'
+    
+hdr = {'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.11 (KHTML, like Gecko) Chrome/23.0.1271.64 Safari/537.11',
+       'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+       'Accept-Charset': 'ISO-8859-1,utf-8;q=0.7,*;q=0.3',
+       'Accept-Encoding': 'none',
+       'Accept-Language': 'en-US,en;q=0.8',
+       'Connection': 'keep-alive'}
+ 
+try:
+    #grap the team page
+    req = urllib2.Request(committer_url,headers=hdr)
+    teamHtml = urllib2.urlopen(req).read()
+      
+    #get table information from html
+    soup = BeautifulSoup(teamHtml, 'html.parser')
+    table = soup.find('table')
+    rows = table.find_all('tr')
+    
+    #get information
+    for row in rows:
+        try:
+            cells = row.find_all('td')
+            try:
+                screen_name = cells[0].find('b').contents[0]
+            except:
+                try:
+                    screen_name = cells[0].find('a').contents[0]
+                except:
+                    screen_name = cells[0].contents[0]
+
+            try:
+                name_block = cells[1].find('a')
+                try:
+                    real_name = name_block.find('b').contents[0]
+                except:
+                    real_name = name_block.contents[0]
+            except:
+                try:
+                    real_name = cells[1].find('b').contents[0]
+                except:
+                    real_name = cells[1].contents[0]
+                    
+                    
+            print(real_name, "       ", screen_name)
+            time = datetime.datetime.now()
+            print(time)
+            try:
+                cursor.execute(insertCommitters, (screen_name, real_name, data_id, time))
+                dbconn.commit()
+            except pymysql.Error as error:
+                print(error)
+                dbconn.rollback() 
+            
+            
+        except:
+            pass
+
+
+except:
+    pass
+
+dbconn.close()
