@@ -1,0 +1,58 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Fri Nov  3 14:42:51 2017
+
+@author: Jack Hartmann
+"""
+
+import sys
+import pymysql
+import getpass
+import datetime
+
+
+    
+pw = ''
+dbuser = ''
+db = 'apache'
+dbhost = 'flossdata.syr.edu'
+datab = 'test'
+
+dbconn = pymysql.connect(host= dbhost,
+                         user= dbuser,
+                         passwd= pw,
+                         db= db,
+                         use_unicode=True,
+                         charset="utf8mb4")
+cursor = dbconn.cursor()
+
+dbconn2 = pymysql.connect(host= dbhost,
+                         user= dbuser,
+                         passwd= pw,
+                         db= datab,
+                         use_unicode=True,
+                         charset="utf8mb4")
+cursor2 = dbconn2.cursor()
+getCommitters = 'SELECT committer_id, screen_name \
+                 FROM apache_committers'
+updateCommitters = 'UPDATE apache_committers SET organization = %s WHERE committer_id = %s'
+getOrg = 'SELECT organization_name FROM apache_committers \
+          WHERE svn_id = %s AND organization_name <> ""'
+
+cursor.execute(getCommitters)
+users = cursor.fetchall()
+for user in users:
+    cursor2.execute(getOrg, (user[1]))
+    try:
+        orgName = cursor2.fetchall()[0]
+        org = orgName[0]
+        if len(org) > 1:
+            print(org, user[0])
+            cursor.execute(updateCommitters,(org, user[0]))
+            dbconn.commit()
+    except:
+        pass
+
+dbconn.close()
+dbconn2.close()
+          
