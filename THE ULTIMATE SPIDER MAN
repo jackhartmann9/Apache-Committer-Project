@@ -18,8 +18,8 @@ try:
 except ImportError:
     import urllib2
 #emails = open(201706.mbox)
-pw = 'Earwig53'
-dbuser = 'jhartmann'
+pw = ''
+dbuser = ''
 db = 'test'
 dbhost = 'flossdata.syr.edu'
 
