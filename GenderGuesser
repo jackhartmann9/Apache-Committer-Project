@@ -1,0 +1,34 @@
+# -*- coding: utf-8 -*-
+"""
+@author: jhartmann
+@author: Megan Squire
+"""
+
+import gender_guesser.detector as gender
+import pymysql
+d = gender.Detector()
+
+# Database connection details
+dbhost = 'flossdata.syr.edu'
+dbuser = ''
+dbschema = 'apache'
+dbpw = ''
+dbconn = pymysql.connect(host=dbhost,
+                         user=dbuser,
+                         passwd=dbpw,
+                         db=dbschema,
+                         use_unicode=True,
+                         charset='utf8mb4',
+                         autocommit=True)
+cursor = dbconn.cursor()
+
+selectPeople = 'SELECT  committer_id, real_name FROM genders'
+updatePeople = 'UPDATE genders SET gender = %s WHERE committer_id = %s'
+cursor.execute(selectPeople)
+people = cursor.fetchall()
+for person in people:
+    g = d.get_gender(person[1].split(" ")[0])
+    print(person[1], ":", g)
+    cursor.execute(updatePeople, (g, person[0]))
+    
+dbconn.close()
